@@ -1,0 +1,20 @@
+{
+  "name": "omnipost-backend",
+  "private": true,
+  "version": "6.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch server.ts"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "better-sqlite3": "^12.6.2",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.7.4",
+    "omnipost-root": "file:.."
+  },
+  "devDependencies": {
+    "tsx": "^4.12.0",
+    "typescript": "^5.8.2"
+  }
+}
