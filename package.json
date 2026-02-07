@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.0.0",
-    "@types/node": "^20.11.30"
+    "@types/node": "^20.11.30",
+    "next": "16.0.10"
   }
 }
