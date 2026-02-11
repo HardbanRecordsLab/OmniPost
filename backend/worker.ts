@@ -110,36 +110,14 @@ export async function processPost(post: Post) {
     return;
   }
 
-  // Fallback legacy behavior (mock adapters)
-  try {
-    await new Promise(resolve => setTimeout(resolve, 500));
-    await queries.updatePostStatus.run({
-      status: 'published',
-      lastError: null,
-      retryCount: post.retry_count || 0,
-      id: post.id
-    });
-  } catch (err) {
-    const currentRetry = post.retry_count || 0;
-    const maxRetries = 3;
-    const message = (err as Error)?.message || 'publish_error';
-    if (currentRetry < maxRetries) {
-      const base = 15000;
-      const delay = Math.min(300000, Math.pow(2, currentRetry) * base) + Math.floor(Math.random() * 5000);
-      const scheduledAt = new Date(Date.now() + delay).toISOString();
-      await queries.updatePostRetry.run({
-        lastError: message,
-        retryCount: currentRetry + 1,
-        scheduledAt,
-        id: post.id
-      });
-    } else {
-      await queries.updatePostStatus.run({
-        status: 'failed',
-        lastError: message,
-        retryCount: currentRetry + 1,
-        id: post.id
-      });
-    }
-  }
+  // Fallback legacy behavior (mock adapters) - DISABLED
+  // throw new Error("Mock adapters are disabled. Please set USE_NEW_PLATFORM_ADAPTERS=true");
+  const { pushLog } = await import('./logs');
+  pushLog({ ts: Date.now(), platformId, postId: post.id, event: 'adapter_missing', message: 'Mocks disabled' });
+  await queries.updatePostStatus.run({
+    status: 'failed',
+    lastError: 'Mocks disabled - legacy path removed',
+    retryCount: (post.retry_count || 0) + 1,
+    id: post.id
+  });
 }
