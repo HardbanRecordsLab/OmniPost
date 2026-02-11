@@ -2,6 +2,12 @@
     "buildCommand": "npm run build",
     "installCommand": "npm install",
     "framework": "nextjs",
+    "rewrites": [
+        {
+            "source": "/api/:path*",
+            "destination": "http://84.247.162.167:3004/api/:path*"
+        }
+    ],
     "headers": [
         {
             "source": "/(.*)",
