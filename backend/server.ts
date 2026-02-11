@@ -16,7 +16,11 @@ startScheduler();
 
 // Register Middleware
 fastify.register(cors, {
-  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : 'http://localhost:3000'
+  origin: (origin, cb) => {
+    // Allow all origins (reflection) for Vercel compatibility
+    cb(null, true);
+  },
+  credentials: true
 });
 
 // Simple API key protection for sensitive endpoints (no-op if API_KEY is unset)
