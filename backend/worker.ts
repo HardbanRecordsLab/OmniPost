@@ -22,14 +22,14 @@ export async function processPost(post: Post) {
         const base = 15000;
         const delay = Math.min(300000, Math.pow(2, currentRetry) * base) + Math.floor(Math.random() * 5000);
         const scheduledAt = new Date(Date.now() + delay).toISOString();
-        queries.updatePostRetry.run({
+        await queries.updatePostRetry.run({
           lastError: 'adapter_missing',
           retryCount: currentRetry + 1,
           scheduledAt,
           id: post.id
         });
       } else {
-        queries.updatePostStatus.run({
+        await queries.updatePostStatus.run({
           status: 'failed',
           lastError: 'adapter_missing',
           retryCount: currentRetry + 1,
@@ -54,14 +54,14 @@ export async function processPost(post: Post) {
         const base = 15000;
         const delay = Math.min(300000, Math.pow(2, currentRetry) * base) + Math.floor(Math.random() * 5000);
         const scheduledAt = new Date(Date.now() + delay).toISOString();
-        queries.updatePostRetry.run({
+        await queries.updatePostRetry.run({
           lastError: (v.errors || []).join(',') || 'validation_failed',
           retryCount: currentRetry + 1,
           scheduledAt,
           id: post.id
         });
       } else {
-        queries.updatePostStatus.run({
+        await queries.updatePostStatus.run({
           status: 'failed',
           lastError: (v.errors || []).join(',') || 'validation_failed',
           retryCount: currentRetry + 1,
@@ -75,7 +75,7 @@ export async function processPost(post: Post) {
       const res = await adapter.publish(normalized);
       const { pushLog } = await import('./logs');
       pushLog({ ts: Date.now(), platformId, postId: post.id, event: 'publish_success', message: res.externalId })
-      queries.updatePostStatus.run({
+      await queries.updatePostStatus.run({
         status: 'published',
         lastError: null,
         retryCount: post.retry_count || 0,
@@ -92,14 +92,14 @@ export async function processPost(post: Post) {
         const base = 15000;
         const delay = Math.min(300000, Math.pow(2, currentRetry) * base) + Math.floor(Math.random() * 5000);
         const scheduledAt = new Date(Date.now() + delay).toISOString();
-        queries.updatePostRetry.run({
+        await queries.updatePostRetry.run({
           lastError: h.reason || err?.message || 'publish_error',
           retryCount: currentRetry + 1,
           scheduledAt,
           id: post.id
         });
       } else {
-        queries.updatePostStatus.run({
+        await queries.updatePostStatus.run({
           status: 'failed',
           lastError: h.reason || err?.message || 'publish_error',
           retryCount: currentRetry + 1,
@@ -113,7 +113,7 @@ export async function processPost(post: Post) {
   // Fallback legacy behavior (mock adapters)
   try {
     await new Promise(resolve => setTimeout(resolve, 500));
-    queries.updatePostStatus.run({
+    await queries.updatePostStatus.run({
       status: 'published',
       lastError: null,
       retryCount: post.retry_count || 0,
@@ -127,14 +127,14 @@ export async function processPost(post: Post) {
       const base = 15000;
       const delay = Math.min(300000, Math.pow(2, currentRetry) * base) + Math.floor(Math.random() * 5000);
       const scheduledAt = new Date(Date.now() + delay).toISOString();
-      queries.updatePostRetry.run({
+      await queries.updatePostRetry.run({
         lastError: message,
         retryCount: currentRetry + 1,
         scheduledAt,
         id: post.id
       });
     } else {
-      queries.updatePostStatus.run({
+      await queries.updatePostStatus.run({
         status: 'failed',
         lastError: message,
         retryCount: currentRetry + 1,

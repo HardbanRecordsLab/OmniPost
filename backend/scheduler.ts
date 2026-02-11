@@ -8,18 +8,18 @@ export function startScheduler() {
   checkAndSchedule();
 
   setInterval(async () => {
-    checkAndSchedule();
+    await checkAndSchedule();
   }, 60000);
 }
 
-function checkAndSchedule() {
-  const duePosts = queries.getDuePosts.all() as Post[];
+async function checkAndSchedule() {
+  const duePosts = await queries.getDuePosts.all() as Post[];
   
   if (duePosts.length === 0) return;
   
   for (const post of duePosts) {
     // Optimistic lock: Mark as publishing so other workers (if any) don't grab it
-    queries.markAsPublishing.run(post.id);
+    await queries.markAsPublishing.run(post.id);
     
     // Execute in background (fire and forget for the loop, but worker handles it)
     processPost(post);
