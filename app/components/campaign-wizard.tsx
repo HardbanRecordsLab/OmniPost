@@ -28,7 +28,7 @@
    SelectValue,
  } from "@/components/ui/select"
  import { Checkbox } from "@/components/ui/checkbox"
- import { api } from "../../apiService"
+ import { api } from "@/lib/api"
 
 const platforms = [
   { id: "instagram", label: "Instagram", color: "from-pink-500 to-purple-600" },

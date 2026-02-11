@@ -16,7 +16,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { api } from "../../apiService"
+import { api } from "@/lib/api"
 
 const platformColors: Record<string, string> = {
   instagram: "bg-gradient-to-br from-pink-500 to-purple-600",

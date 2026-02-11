@@ -107,5 +107,25 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data)
     });
+  },
+  async getCampaigns() {
+    return request('/api/campaigns');
+  },
+  async createCampaign(data: any) {
+    return request('/api/campaigns', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+  async updateCampaign(id: string, data: any) {
+    return request(`/api/campaigns/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  },
+  async deleteCampaign(id: string) {
+    return request(`/api/campaigns/${id}`, {
+      method: 'DELETE'
+    });
   }
 };
