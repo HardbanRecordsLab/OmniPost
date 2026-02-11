@@ -28,104 +28,111 @@
    SelectValue,
  } from "@/components/ui/select"
  import { Checkbox } from "@/components/ui/checkbox"
- import confetti from "canvas-confetti"
- 
- const platforms = [
-   { id: "instagram", label: "Instagram", color: "from-pink-500 to-purple-600" },
-   { id: "facebook", label: "Facebook", color: "from-blue-600 to-blue-500" },
-   { id: "twitter", label: "Twitter/X", color: "from-gray-900 to-gray-800 dark:from-gray-100 dark:to-gray-200" },
-   { id: "linkedin", label: "LinkedIn", color: "from-blue-700 to-blue-600" },
-   { id: "tiktok", label: "TikTok", color: "from-cyan-400 to-pink-500" },
- ]
- 
- const mockGeneratedPosts = [
-   {
-     id: "1",
-     content: "Discover how our innovative solutions are transforming the way businesses operate. The future is here, and it's exciting! #Innovation #Tech #Business",
-     platform: "instagram",
-     scheduledTime: "9:00 AM",
-     scheduledDate: addDays(new Date(), 1),
-   },
-   {
-     id: "2",
-     content: "Quick tip: Consistency is key in social media marketing. Post regularly, engage with your audience, and watch your community grow! What's your best social media tip?",
-     platform: "twitter",
-     scheduledTime: "12:00 PM",
-     scheduledDate: addDays(new Date(), 1),
-   },
-   {
-     id: "3",
-     content: "We're proud to announce a new milestone! Thanks to our amazing community for the continued support. Here's what's coming next...",
-     platform: "linkedin",
-     scheduledTime: "3:00 PM",
-     scheduledDate: addDays(new Date(), 2),
-   },
-   {
-     id: "4",
-     content: "Behind the scenes: Our team is hard at work creating something special for you. Stay tuned for the big reveal! #ComingSoon #BTS",
-     platform: "instagram",
-     scheduledTime: "5:00 PM",
-     scheduledDate: addDays(new Date(), 2),
-   },
-   {
-     id: "5",
-     content: "Monday motivation: Every great achievement starts with the decision to try. What are you working towards this week? Share your goals below!",
-     platform: "facebook",
-     scheduledTime: "8:00 AM",
-     scheduledDate: addDays(new Date(), 3),
-   },
- ]
- 
- interface CampaignWizardProps { onComplete?: () => void }
- 
- export function CampaignWizard({ onComplete }: CampaignWizardProps) {
-   const [step, setStep] = useState(1)
-   const [isGenerating, setIsGenerating] = useState(false)
-   const [generationProgress, setGenerationProgress] = useState(0)
-   const [generatedPosts, setGeneratedPosts] = useState<typeof mockGeneratedPosts>([])
-   const [selectedPosts, setSelectedPosts] = useState<string[]>([])
- 
-   const [topic, setTopic] = useState("")
-   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["instagram", "twitter"])
-   const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"))
-   const [endDate, setEndDate] = useState(format(addDays(new Date(), 7), "yyyy-MM-dd"))
-   const [tone, setTone] = useState("professional")
-   const [postsPerDay, setPostsPerDay] = useState("2")
-   const [autoHashtags, setAutoHashtags] = useState(true)
- 
-   const togglePlatform = (platformId: string) => {
-     setSelectedPlatforms((prev) =>
-       prev.includes(platformId) ? prev.filter((p) => p !== platformId) : [...prev, platformId]
-     )
+ import { api } from "../../apiService"
+
+const platforms = [
+  { id: "instagram", label: "Instagram", color: "from-pink-500 to-purple-600" },
+  { id: "facebook", label: "Facebook", color: "from-blue-600 to-blue-500" },
+  { id: "twitter", label: "Twitter/X", color: "from-gray-900 to-gray-800 dark:from-gray-100 dark:to-gray-200" },
+  { id: "linkedin", label: "LinkedIn", color: "from-blue-700 to-blue-600" },
+  { id: "tiktok", label: "TikTok", color: "from-cyan-400 to-pink-500" },
+]
+
+interface CampaignWizardProps { onComplete?: () => void }
+
+export function CampaignWizard({ onComplete }: CampaignWizardProps) {
+  const [step, setStep] = useState(1)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [generationProgress, setGenerationProgress] = useState(0)
+  const [generatedPosts, setGeneratedPosts] = useState<any[]>([])
+  const [selectedPosts, setSelectedPosts] = useState<string[]>([])
+
+  const [topic, setTopic] = useState("")
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(["instagram", "twitter"])
+  const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"))
+  const [endDate, setEndDate] = useState(format(addDays(new Date(), 7), "yyyy-MM-dd"))
+  const [tone, setTone] = useState("professional")
+  const [postsPerDay, setPostsPerDay] = useState("1")
+  const [autoHashtags, setAutoHashtags] = useState(true)
+
+  const togglePlatform = (platformId: string) => {
+    setSelectedPlatforms((prev) =>
+      prev.includes(platformId) ? prev.filter((p) => p !== platformId) : [...prev, platformId]
+    )
   }
- 
-   const handleGenerate = async () => {
-     setIsGenerating(true)
-     setGenerationProgress(0)
-     const progressInterval = setInterval(() => {
-       setGenerationProgress((prev) => {
-         if (prev >= 100) {
-           clearInterval(progressInterval)
-           return 100
-         }
-         return prev + Math.random() * 15
-       })
-     }, 300)
-     await new Promise((resolve) => setTimeout(resolve, 3000))
-     clearInterval(progressInterval)
-     setGenerationProgress(100)
-     await new Promise((resolve) => setTimeout(resolve, 500))
-     setGeneratedPosts(mockGeneratedPosts)
-     setSelectedPosts(mockGeneratedPosts.map((p) => p.id))
-     setIsGenerating(false)
-     setStep(3)
-     confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } })
-   }
- 
-   const handleSchedule = () => {
-     confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } })
-     onComplete?.()
-   }
+
+  const handleGenerate = async () => {
+    if (!topic) return
+    setIsGenerating(true)
+    setGenerationProgress(0)
+    
+    // Simulate processing time
+    const progressInterval = setInterval(() => {
+      setGenerationProgress((prev) => (prev >= 90 ? 90 : prev + 10))
+    }, 100)
+
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    clearInterval(progressInterval)
+    setGenerationProgress(100)
+
+    // Generate template posts based on user input
+    const newPosts = []
+    let idCounter = 1
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+    // Limit to reasonable number of days
+    const daysDiff = Math.min(30, Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)))
+    const pPerDay = parseInt(postsPerDay) || 1
+
+    for (let i = 0; i <= daysDiff; i++) {
+      const currentDate = addDays(start, i)
+      for (let j = 0; j < pPerDay; j++) {
+        for (const platform of selectedPlatforms) {
+           const hashtagStr = autoHashtags ? ` #${topic.replace(/\s+/g, '')} #${platform}` : ''
+           newPosts.push({
+             id: String(idCounter++),
+             content: `[Draft] ${topic} - Post ${j+1} for ${platform} (${tone} tone).${hashtagStr}`,
+             platform: platform,
+             scheduledTime: "10:00 AM",
+             scheduledDate: currentDate,
+           })
+        }
+      }
+    }
+
+    setGeneratedPosts(newPosts)
+    setSelectedPosts(newPosts.map((p) => p.id))
+    setIsGenerating(false)
+    setStep(3)
+    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } })
+  }
+
+  const handleSchedule = async () => {
+    try {
+      const postsToCreate = generatedPosts.filter(p => selectedPosts.includes(p.id))
+      
+      // Create posts via API
+      for (const post of postsToCreate) {
+        // Combine date and time
+        const scheduledAt = new Date(post.scheduledDate)
+        // Assume default 10:00 AM for now, or parse post.scheduledTime
+        scheduledAt.setHours(10, 0, 0, 0)
+
+        await api.createPost({
+          content: post.content,
+          platformIds: [post.platform], // API expects array of platform IDs
+          scheduledAt: scheduledAt.toISOString(),
+          status: 'scheduled'
+        })
+      }
+      
+      confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } })
+      onComplete?.()
+    } catch (error) {
+      console.error("Failed to create posts", error)
+      // Optional: show error toast
+    }
+  }
  
    const togglePostSelection = (postId: string) => {
      setSelectedPosts((prev) =>
