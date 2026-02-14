@@ -5,11 +5,13 @@ dotenv.config();
 
 const { Pool } = pg;
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://hbrl_admin:HardbanRecordsLab2026!@hbrl-postgres:5432/hbrl_central';
+const connectionString = process.env.DATABASE_URL || 'postgresql://hbrl_admin:HardbanRecordsLab2026!@localhost:5432/hbrl_central';
 
 const pool = new Pool({
   connectionString,
 });
+
+export { pool };
 
 // Helper to mimic better-sqlite3 statement
 const stmt = (originalSql: string) => {
@@ -148,6 +150,78 @@ export async function initDb() {
         valid_until TIMESTAMP,
         plan_id TEXT,
         created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS media (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT,
+        filename TEXT NOT NULL,
+        original_url TEXT,
+        cdn_url TEXT,
+        storage_key TEXT,
+        file_type TEXT,
+        mime_type TEXT,
+        file_size INTEGER,
+        width INTEGER,
+        height INTEGER,
+        metadata JSONB,
+        thumbnail_url TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS post_media (
+        post_id TEXT,
+        media_id UUID,
+        sort_order INTEGER DEFAULT 0,
+        PRIMARY KEY (post_id, media_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS drafts (
+        user_id TEXT PRIMARY KEY,
+        content TEXT,
+        platforms JSONB,
+        media_ids JSONB,
+        last_saved_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS post_analytics (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id TEXT,
+        platform TEXT,
+        likes INTEGER DEFAULT 0,
+        shares INTEGER DEFAULT 0,
+        comments INTEGER DEFAULT 0,
+        impressions INTEGER DEFAULT 0,
+        reach INTEGER DEFAULT 0,
+        clicks INTEGER DEFAULT 0,
+        fetched_at TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS social_accounts (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT,
+        platform TEXT NOT NULL,
+        platform_user_id TEXT,
+        username TEXT,
+        name TEXT,
+        avatar_url TEXT,
+        access_token TEXT,
+        refresh_token TEXT,
+        token_expires_at TIMESTAMP,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(user_id, platform, platform_user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS queue_jobs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        post_id TEXT,
+        platform TEXT,
+        job_id TEXT,
+        status TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
     );
   `;
   

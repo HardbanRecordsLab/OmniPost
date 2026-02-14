@@ -3,28 +3,30 @@
  import React from "react"
  import { useState } from "react"
  import { motion, AnimatePresence } from "framer-motion"
- import { LayoutDashboard, Calendar, List, Sparkles, BarChart3, Settings, ChevronLeft, ChevronRight, HelpCircle, Crown } from "lucide-react"
- import { cn } from "@/lib/utils"
- import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
- 
- const PlatformBadges = () => (
-   <div className="flex items-center gap-2">
-     <div className="w-6 h-6 rounded-full instagram-gradient" />
-     <div className="w-6 h-6 rounded-full bg-[#1877F2]" />
-     <div className="w-6 h-6 rounded-full bg-black dark:bg-white" />
-     <div className="w-6 h-6 rounded-full bg-[#0A66C2]" />
-   </div>
- )
- 
- interface NavItem { icon: React.ElementType; label: string; id: string }
- const navItems: NavItem[] = [
-   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" },
-   { icon: Calendar, label: "Calendar", id: "calendar" },
-   { icon: List, label: "Queue", id: "queue" },
-   { icon: Sparkles, label: "Create Campaign", id: "campaign" },
-   { icon: BarChart3, label: "Analytics", id: "analytics" },
-   { icon: Settings, label: "Settings", id: "settings" },
- ]
+ import { LayoutDashboard, Calendar, List, Sparkles, BarChart3, Settings, ChevronLeft, ChevronRight, HelpCircle, Crown, Network, PenTool } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+
+const PlatformBadges = () => (
+  <div className="flex items-center gap-2">
+    <div className="w-6 h-6 rounded-full instagram-gradient" />
+    <div className="w-6 h-6 rounded-full bg-[#1877F2]" />
+    <div className="w-6 h-6 rounded-full bg-black dark:bg-white" />
+    <div className="w-6 h-6 rounded-full bg-[#0A66C2]" />
+  </div>
+)
+
+interface NavItem { icon: React.ElementType; label: string; id: string }
+const navItems: NavItem[] = [
+  { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" },
+  { icon: Calendar, label: "Calendar", id: "calendar" },
+  { icon: List, label: "Queue", id: "queue" },
+  { icon: PenTool, label: "Create Post", id: "create" },
+  { icon: Sparkles, label: "Create Campaign", id: "campaign" },
+  { icon: Network, label: "Integrations", id: "integrations" },
+  { icon: BarChart3, label: "Analytics", id: "analytics" },
+  { icon: Settings, label: "Settings", id: "settings" },
+]
  
  interface SidebarProps { activeView: string; onViewChange: (view: string) => void }
  

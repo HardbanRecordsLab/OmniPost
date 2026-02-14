@@ -2,9 +2,14 @@ import dotenv from 'dotenv';
 dotenv.config();
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { initDb, queries } from './db';
+import multipart from '@fastify/multipart';
+import { initDb, queries, pool } from './db';
 import { startScheduler } from './scheduler';
 import { randomUUID } from 'crypto';
+import socialMediaService from './src/services/social-media.service';
+import { mediaService } from './src/services/media.service';
+import { aiService } from './src/services/ai.service';
+import path from 'path';
 
 const fastify = Fastify({ logger: { level: 'warn' } });
 const API_KEY = process.env.API_KEY || '';
@@ -21,6 +26,12 @@ fastify.register(cors, {
     cb(null, true);
   },
   credentials: true
+});
+
+fastify.register(multipart, {
+  limits: {
+    fileSize: 1024 * 1024 * 1024 // 1GB limit for video uploads
+  }
 });
 
 // Simple API key protection for sensitive endpoints (no-op if API_KEY is unset)
@@ -48,6 +59,261 @@ fastify.get('/api/health', async () => {
   return { status: 'ok', timestamp: Date.now() };
 });
 
+// ========== INTEGRATIONS ROUTES ==========
+
+// GET /api/integrations
+fastify.get('/api/integrations', async (request, reply) => {
+    try {
+        // Assuming single user for now or getting user ID from request (mock for VPS)
+        const userId = 'default-user'; // Replace with actual user extraction if auth implemented
+        const accounts = await socialMediaService.getConnectedAccounts(userId);
+        return { success: true, accounts };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// POST /api/integrations/:platform/connect
+fastify.post<{ Params: { platform: string } }>('/api/integrations/:platform/connect', async (request, reply) => {
+    try {
+        const { platform } = request.params;
+        const userId = 'default-user'; // Replace with actual user extraction
+        const authUrl = socialMediaService.getAuthUrl(platform, userId);
+        return { success: true, authUrl };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// GET /api/integrations/:platform/callback
+fastify.get<{ Params: { platform: string }, Querystring: { code: string; state: string } }>('/api/integrations/:platform/callback', async (request, reply) => {
+    try {
+        const { platform } = request.params;
+        const { code, state } = request.query;
+
+        if (!code) {
+             return reply.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/integrations?error=authorization_failed`);
+        }
+
+        await socialMediaService.handleCallback(platform, code, state);
+
+        return reply.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/integrations?success=true&platform=${platform}`);
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.redirect(`${process.env.FRONTEND_URL || 'http://localhost:5173'}/integrations?error=${encodeURIComponent(error.message)}`);
+    }
+});
+
+// DELETE /api/integrations/:accountId
+fastify.delete<{ Params: { accountId: string } }>('/api/integrations/:accountId', async (request, reply) => {
+    try {
+        const userId = 'default-user'; // Replace with actual user extraction
+        await socialMediaService.disconnectAccount(userId, request.params.accountId);
+        return { success: true };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// ========== MEDIA ROUTES ==========
+
+// POST /api/media/upload
+fastify.post('/api/media/upload', async (request, reply) => {
+    try {
+        const data = await request.file();
+        if (!data) {
+            return reply.status(400).send({ success: false, error: 'No file uploaded' });
+        }
+        
+        // Convert stream to buffer (NOTE: For large files this should be optimized to stream directly to disk)
+        const buffer = await data.toBuffer();
+        
+        const fileObj = {
+            buffer,
+            mimetype: data.mimetype,
+            originalname: data.filename,
+            size: buffer.length
+        };
+
+        const userId = 'default-user';
+        const media = await mediaService.uploadMedia(userId, fileObj);
+        return { success: true, media };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// POST /api/media/upload-multiple
+fastify.post('/api/media/upload-multiple', async (request, reply) => {
+    try {
+        const parts = request.files();
+        const userId = 'default-user';
+        const mediaFiles = [];
+
+        for await (const part of parts) {
+             const buffer = await part.toBuffer();
+             const fileObj = {
+                buffer,
+                mimetype: part.mimetype,
+                originalname: part.filename,
+                size: buffer.length
+            };
+            const media = await mediaService.uploadMedia(userId, fileObj);
+            mediaFiles.push(media);
+        }
+
+        return { success: true, media: mediaFiles };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// GET /api/media
+fastify.get('/api/media', async (request, reply) => {
+    try {
+        const userId = 'default-user';
+        const result = await pool.query(
+            'SELECT * FROM media WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100',
+            [userId]
+        );
+        return { success: true, media: result.rows };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// DELETE /api/media/:id
+fastify.delete<{ Params: { id: string } }>('/api/media/:id', async (request, reply) => {
+    try {
+        const userId = 'default-user';
+        await mediaService.deleteMedia(userId, request.params.id);
+        return { success: true };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// ========== AI ROUTES ==========
+
+fastify.post<{ Body: { prompt: string; platform: string; tone: string; length?: any; includeHashtags?: boolean; includeEmojis?: boolean } }>('/api/ai/generate-caption', async (request, reply) => {
+    try {
+        const { prompt, platform, tone, length, includeHashtags, includeEmojis } = request.body;
+        const caption = await aiService.generateCaption(prompt, {
+            platform,
+            tone,
+            length,
+            includeHashtags,
+            includeEmojis
+        });
+        return { success: true, caption };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+fastify.post<{ Body: { caption: string; improvement: string } }>('/api/ai/improve-caption', async (request, reply) => {
+    try {
+        const { caption, improvement } = request.body;
+        const improvedCaption = await aiService.improveCaption(caption, improvement);
+        return { success: true, caption: improvedCaption };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+fastify.post<{ Body: { caption: string; platform: string; count: number } }>('/api/ai/generate-hashtags', async (request, reply) => {
+    try {
+        const { caption, platform, count } = request.body;
+        const hashtags = await aiService.generateHashtags(caption, platform, count);
+        return { success: true, hashtags };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+fastify.post<{ Body: { topic: string; days: number; platforms: string[] } }>('/api/ai/generate-calendar', async (request, reply) => {
+    try {
+        const { topic, days, platforms } = request.body;
+        const calendar = await aiService.generateContentCalendar(topic, days, platforms);
+        return { success: true, calendar };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// ========== ANALYTICS & DRAFTS ==========
+
+fastify.get<{ Params: { id: string } }>('/api/analytics/post/:id', async (request, reply) => {
+    try {
+         const result = await pool.query(`
+          SELECT * FROM post_analytics
+          WHERE post_id = $1
+          ORDER BY fetched_at DESC
+        `, [request.params.id]);
+        return { success: true, analytics: result.rows };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+fastify.post<{ Params: { postId: string; platform: string } }>('/api/analytics/fetch/:postId/:platform', async (request, reply) => {
+    try {
+        const insights = await socialMediaService.fetchAnalytics(
+            request.params.postId,
+            request.params.platform
+        );
+        return { success: true, insights };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+fastify.post<{ Body: { content: string; platforms: any; mediaIds: any } }>('/api/drafts/save', async (request, reply) => {
+    try {
+        const { content, platforms, mediaIds } = request.body;
+        const userId = 'default-user';
+        await pool.query(`
+          INSERT INTO drafts (user_id, content, platforms, media_ids)
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (user_id) DO UPDATE SET
+            content = $2, platforms = $3, media_ids = $4, last_saved_at = NOW()
+        `, [userId, content, platforms, mediaIds]);
+        return { success: true };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+fastify.get('/api/drafts', async (request, reply) => {
+    try {
+        const userId = 'default-user';
+        const result = await pool.query(
+          'SELECT * FROM drafts WHERE user_id = $1',
+          [userId]
+        );
+        return { success: true, draft: result.rows[0] || null };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
+// ========== ORIGINAL POST ROUTES (V6) ==========
+
 // GET Posts (scheduled + draft)
 fastify.get('/api/posts', async () => {
   const rows = await queries.getAllPostsV6.all() as any[];
@@ -69,10 +335,10 @@ fastify.get('/api/posts', async () => {
 // POST Create Post
 fastify.post<{ Body: { content: string; scheduledAt?: string; status?: string; platformIds?: string[]; mediaUrls?: string[] } }>('/api/posts', { preHandler: requireLicense }, async (request, reply) => {
   const { content, scheduledAt, status = 'draft', platformIds = [], mediaUrls = [] } = request.body;
-  if (!content) return reply.status(400).send({ error: 'content is required' });
+  if (!content && (!mediaUrls || mediaUrls.length === 0)) return reply.status(400).send({ error: 'content or media is required' });
   const post = {
     id: randomUUID(),
-    content,
+    content: content || '',
     scheduledAt: scheduledAt || null,
     status,
     platformIds: platformIds.join(','),
@@ -80,6 +346,16 @@ fastify.post<{ Body: { content: string; scheduledAt?: string; status?: string; p
   };
   try {
     await queries.insertPostV6.run(post);
+    
+    // Schedule the post if needed
+    if (scheduledAt || status === 'publishing' || status === 'scheduled') {
+        // Use scheduler service to handle the job creation
+        // Note: we don't await this to keep response fast, or we can await if we want to ensure it's queued
+        schedulerService.schedulePost(post.id, scheduledAt || undefined).catch(err => {
+            request.log.error(`Failed to schedule post ${post.id}: ${err.message}`);
+        });
+    }
+
     return { success: true, post: { ...post, platformIds, mediaUrls } };
   } catch (err) {
     request.log.error(err);
@@ -103,10 +379,6 @@ fastify.delete<{ Params: { id: string } }>('/api/posts/:id', { preHandler: requi
 fastify.put<{ Params: { id: string }, Body: any }>('/api/posts/:id', { preHandler: requireLicense }, async (request, reply) => {
   const { id } = request.params;
   const data = request.body;
-  
-  // Get existing post to merge if needed, or just require all fields. 
-  // For simplicity, let's assume the client sends the full updated object or we only update specific fields.
-  // queries.updatePost requires: content, scheduledAt, status, id
   
   try {
     const existing = await queries.getPostById.get(id) as any;
@@ -160,6 +432,14 @@ fastify.put<{ Params: { id: string }, Body: any }>('/api/posts/:id', { preHandle
         platformIds: (data.platformIds as string[]).join(',')
       };
       await queries.updatePostV6.run(updatedV6);
+      
+      // Update scheduler
+      if (updatedV6.status === 'draft') {
+          schedulerService.cancelScheduledPost(id).catch(console.error);
+      } else if (updatedV6.status === 'scheduled' || updatedV6.status === 'publishing') {
+          schedulerService.reschedulePost(id, updatedV6.scheduledAt || undefined).catch(console.error);
+      }
+
       return { success: true, post: { ...updatedV6, platformIds: data.platformIds } };
     } else {
       const updated = {
@@ -169,6 +449,14 @@ fastify.put<{ Params: { id: string }, Body: any }>('/api/posts/:id', { preHandle
         status: data.status || existing.status
       };
       await queries.updatePost.run(updated);
+      
+      // Update scheduler for legacy update
+      if (updated.status === 'draft') {
+          schedulerService.cancelScheduledPost(id).catch(console.error);
+      } else if (updated.status === 'scheduled' || updated.status === 'publishing') {
+          schedulerService.reschedulePost(id, updated.scheduledAt || undefined).catch(console.error);
+      }
+
       return { success: true, post: updated };
     }
   } catch (err) {
@@ -377,31 +665,6 @@ fastify.put<{ Body: Record<string, string> }>('/api/settings', async (request, r
   }
 });
 
-// Generate AI Content (proxy)
-fastify.post<{ Body: { topic: string; clusters: string[]; provider?: 'gemini' | 'grok' } }>('/api/generate', async (request, reply) => {
-  const { topic, clusters = [], provider } = request.body;
-  const settingsRows = await queries.getAllSettings.all() as { key: string, value: string }[];
-  const settings = settingsRows.reduce((acc, row) => {
-    acc[row.key] = row.value;
-    return acc;
-  }, {} as Record<string, string>);
-  const geminiKey = process.env.GEMINI_API_KEY || settings['GEMINI_API_KEY'] || '';
-  const grokKey = process.env.GROK_API_KEY || settings['GROK_API_KEY'] || '';
-  const selectedProvider = provider || (geminiKey ? 'gemini' : grokKey ? 'grok' : 'grok');
-  try {
-    const platforms = ['instagram','facebook','twitter','linkedin','tiktok'];
-    const result = platforms.slice(0, Math.max(1, clusters.length || 3)).map((p, i) => ({
-      id: randomUUID(),
-      platformId: p,
-      content: `${topic} — ${p} — variant ${i+1}`,
-      status: 'draft'
-    }));
-    return { provider: selectedProvider, posts: result };
-  } catch (err) {
-    request.log.error(err);
-    return reply.status(500).send({ error: 'Failed to generate content' });
-  }
-});
 fastify.post<{ Body: { platformId: string; content: string; mediaUrls?: string[] } }>('/api/publish/trigger', { preHandler: [requireApiKey, requireLicense] }, async (request, reply) => {
   const { platformId, content, mediaUrls = [] } = request.body;
   try {

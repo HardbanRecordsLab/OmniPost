@@ -10,40 +10,46 @@ import { Sidebar } from "@/components/sidebar"
  import { CampaignWizard } from "@/components/campaign-wizard"
  import { SettingsView } from "@/components/settings-view"
  import { PostEditorModal } from "@/components/post-editor-modal"
- 
- export default function OmniPostDashboard() {
-   const [activeView, setActiveView] = useState("dashboard")
-   const [isDark, setIsDark] = useState(false)
-   const [isPostEditorOpen, setIsPostEditorOpen] = useState(false)
- 
-   useEffect(() => {
-     if (isDark) {
-       document.documentElement.classList.add("dark")
-     } else {
-       document.documentElement.classList.remove("dark")
-     }
-   }, [isDark])
- 
-   const toggleTheme = () => setIsDark(!isDark)
- 
-   const renderContent = () => {
-     switch (activeView) {
-       case "dashboard":
-         return <DashboardOverview />
-       case "calendar":
-         return <CalendarView onCreatePost={() => setIsPostEditorOpen(true)} />
-       case "queue":
-         return <QueueView />
-       case "campaign":
-         return <CampaignWizard onComplete={() => setActiveView("calendar")} />
-       case "analytics":
-         return <AnalyticsPlaceholder />
-       case "settings":
-         return <SettingsView />
-       default:
-         return <DashboardOverview />
-     }
-   }
+import { SocialAccountsManager } from "@/components/social-accounts-manager"
+import PostScheduler from "@/components/post-scheduler"
+
+export default function OmniPostDashboard() {
+  const [activeView, setActiveView] = useState("dashboard")
+  const [isDark, setIsDark] = useState(false)
+  const [isPostEditorOpen, setIsPostEditorOpen] = useState(false)
+
+  useEffect(() => {
+    if (isDark) {
+      document.documentElement.classList.add("dark")
+    } else {
+      document.documentElement.classList.remove("dark")
+    }
+  }, [isDark])
+
+  const toggleTheme = () => setIsDark(!isDark)
+
+  const renderContent = () => {
+    switch (activeView) {
+      case "dashboard":
+        return <DashboardOverview />
+      case "calendar":
+        return <CalendarView onCreatePost={() => setIsPostEditorOpen(true)} />
+      case "queue":
+        return <QueueView />
+      case "campaign":
+        return <CampaignWizard onComplete={() => setActiveView("calendar")} />
+      case "create":
+        return <PostScheduler />
+      case "integrations":
+        return <SocialAccountsManager />
+      case "analytics":
+        return <AnalyticsPlaceholder />
+      case "settings":
+        return <SettingsView />
+      default:
+        return <DashboardOverview />
+    }
+  }
  
    return (
      <div className="flex h-screen overflow-hidden bg-background gradient-mesh">
