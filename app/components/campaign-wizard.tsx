@@ -28,7 +28,7 @@
    SelectValue,
  } from "@/components/ui/select"
  import { Checkbox } from "@/components/ui/checkbox"
- import { api } from "@/lib/api"
+import { api } from "@/lib/api"
 
 const platforms = [
   { id: "instagram", label: "Instagram", color: "from-pink-500 to-purple-600" },
@@ -38,13 +38,21 @@ const platforms = [
   { id: "tiktok", label: "TikTok", color: "from-cyan-400 to-pink-500" },
 ]
 
+interface GeneratedCampaignPost {
+  id: string
+  content: string
+  platform: string
+  scheduledTime: string
+  scheduledDate: Date
+}
+
 interface CampaignWizardProps { onComplete?: () => void }
 
 export function CampaignWizard({ onComplete }: CampaignWizardProps) {
   const [step, setStep] = useState(1)
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationProgress, setGenerationProgress] = useState(0)
-  const [generatedPosts, setGeneratedPosts] = useState<any[]>([])
+  const [generatedPosts, setGeneratedPosts] = useState<GeneratedCampaignPost[]>([])
   const [selectedPosts, setSelectedPosts] = useState<string[]>([])
 
   const [topic, setTopic] = useState("")
@@ -65,46 +73,69 @@ export function CampaignWizard({ onComplete }: CampaignWizardProps) {
     if (!topic) return
     setIsGenerating(true)
     setGenerationProgress(0)
-    
-    // Simulate processing time
+
     const progressInterval = setInterval(() => {
       setGenerationProgress((prev) => (prev >= 90 ? 90 : prev + 10))
-    }, 100)
+    }, 120)
 
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    clearInterval(progressInterval)
-    setGenerationProgress(100)
+    try {
+      const clusters = selectedPlatforms.length > 0 ? selectedPlatforms : ["instagram"]
+      const aiRes = await api.generate({
+        topic,
+        clusters,
+        provider: "gemini",
+      })
 
-    // Generate template posts based on user input
-    const newPosts = []
-    let idCounter = 1
-    const start = new Date(startDate)
-    const end = new Date(endDate)
-    // Limit to reasonable number of days
-    const daysDiff = Math.min(30, Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)))
-    const pPerDay = parseInt(postsPerDay) || 1
+      const aiPosts = aiRes.posts || []
 
-    for (let i = 0; i <= daysDiff; i++) {
-      const currentDate = addDays(start, i)
-      for (let j = 0; j < pPerDay; j++) {
-        for (const platform of selectedPlatforms) {
-           const hashtagStr = autoHashtags ? ` #${topic.replace(/\s+/g, '')} #${platform}` : ''
-           newPosts.push({
-             id: String(idCounter++),
-             content: `[Draft] ${topic} - Post ${j+1} for ${platform} (${tone} tone).${hashtagStr}`,
-             platform: platform,
-             scheduledTime: "10:00 AM",
-             scheduledDate: currentDate,
-           })
+      const newPosts: GeneratedCampaignPost[] = []
+      let idCounter = 1
+      const start = new Date(startDate)
+      const end = new Date(endDate)
+      const daysDiff = Math.min(
+        30,
+        Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24))
+      )
+      const pPerDay = parseInt(postsPerDay) || 1
+
+      for (let i = 0; i <= daysDiff; i++) {
+        const currentDate = addDays(start, i)
+        for (let j = 0; j < pPerDay; j++) {
+          for (const platform of selectedPlatforms) {
+            const aiMatch =
+              aiPosts.find((p: any) => p.platformId === platform) || aiPosts[0]
+
+            let content =
+              aiMatch?.content ||
+              `[Draft] ${topic} - Post ${j + 1} for ${platform} (${tone} tone).`
+
+            if (autoHashtags) {
+              const hashtagStr = ` #${topic.replace(/\s+/g, "")} #${platform}`
+              content = `${content}${hashtagStr}`
+            }
+
+            newPosts.push({
+              id: String(idCounter++),
+              content,
+              platform,
+              scheduledTime: "10:00 AM",
+              scheduledDate: currentDate,
+            })
+          }
         }
       }
-    }
 
-    setGeneratedPosts(newPosts)
-    setSelectedPosts(newPosts.map((p) => p.id))
-    setIsGenerating(false)
-    setStep(3)
-    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } })
+      setGeneratedPosts(newPosts)
+      setSelectedPosts(newPosts.map((p) => p.id))
+      setGenerationProgress(100)
+      setStep(3)
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } })
+    } catch (error) {
+      console.error("AI campaign generation failed", error)
+    } finally {
+      clearInterval(progressInterval)
+      setIsGenerating(false)
+    }
   }
 
   const handleSchedule = async () => {

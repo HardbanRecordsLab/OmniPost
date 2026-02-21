@@ -14,12 +14,10 @@ import path from 'path';
 const fastify = Fastify({ logger: { level: 'warn' } });
 const API_KEY = process.env.API_KEY || '';
 
-// Initialize Database
 initDb();
 
 startScheduler();
 
-// Register Middleware
 fastify.register(cors, {
   origin: (origin, cb) => {
     // Allow all origins (reflection) for Vercel compatibility
@@ -34,7 +32,6 @@ fastify.register(multipart, {
   }
 });
 
-// Simple API key protection for sensitive endpoints (no-op if API_KEY is unset)
 const requireApiKey = async (request: any, reply: any) => {
   if (!API_KEY) return;
   const h = String(request.headers['x-api-key'] || request.headers['authorization'] || '');
@@ -50,22 +47,25 @@ const requireLicense = async (_request: any, reply: any) => {
   }
 };
 
-// --- v6 API ---
+const schedulerService = {
+  schedulePost: async (postId: string, scheduledAt?: string) => {
+    console.log(`Post ${postId} queued for scheduling at ${scheduledAt || 'now'}`);
+  },
+  cancelScheduledPost: async (postId: string) => {
+    console.log(`Post ${postId} scheduling cancelled`);
+  },
+  reschedulePost: async (postId: string, scheduledAt?: string) => {
+    console.log(`Post ${postId} rescheduled to ${scheduledAt}`);
+  }
+};
 
-// --- Routes ---
-
-// Health Check
 fastify.get('/api/health', async () => {
   return { status: 'ok', timestamp: Date.now() };
 });
 
-// ========== INTEGRATIONS ROUTES ==========
-
-// GET /api/integrations
 fastify.get('/api/integrations', async (request, reply) => {
     try {
-        // Assuming single user for now or getting user ID from request (mock for VPS)
-        const userId = 'default-user'; // Replace with actual user extraction if auth implemented
+        const userId = 'default-user';
         const accounts = await socialMediaService.getConnectedAccounts(userId);
         return { success: true, accounts };
     } catch (error: any) {
@@ -241,6 +241,21 @@ fastify.post<{ Body: { caption: string; platform: string; count: number } }>('/a
     }
 });
 
+fastify.post<{ Body: { topic: string; clusters: string[]; provider?: string } }>('/api/generate', async (request, reply) => {
+    try {
+        const { topic, clusters = [] } = request.body;
+        if (!topic) {
+            return reply.status(400).send({ success: false, error: 'topic is required' });
+        }
+
+        const posts = await aiService.generateSocialContent(topic, clusters);
+        return { success: true, posts };
+    } catch (error: any) {
+        request.log.error(error);
+        return reply.status(500).send({ success: false, error: error.message });
+    }
+});
+
 fastify.post<{ Body: { topic: string; days: number; platforms: string[] } }>('/api/ai/generate-calendar', async (request, reply) => {
     try {
         const { topic, days, platforms } = request.body;
@@ -310,6 +325,78 @@ fastify.get('/api/drafts', async (request, reply) => {
         request.log.error(error);
         return reply.status(500).send({ success: false, error: error.message });
     }
+});
+
+fastify.get('/api/campaigns', async (request, reply) => {
+  try {
+    const campaigns = await queries.getCampaigns.all();
+    return { success: true, campaigns };
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({ success: false, error: error.message });
+  }
+});
+
+fastify.post<{ Body: { name?: string; topic?: string; platforms?: string[]; startDate?: string; endDate?: string; tone?: string; originalPrompt?: string } }>(
+  '/api/campaigns',
+  async (request, reply) => {
+    try {
+      const { name, topic, platforms, startDate, endDate, tone, originalPrompt } = request.body;
+      const id = randomUUID();
+      await queries.createCampaign.run({
+        id,
+        name: name || topic || 'New Campaign',
+        originalPrompt: originalPrompt || topic || '',
+        topic: topic || '',
+        platforms: Array.isArray(platforms) ? platforms.join(',') : platforms || '',
+        startDate: startDate || '',
+        endDate: endDate || '',
+        tone: tone || 'professional',
+        status: 'draft'
+      });
+      const campaign = await queries.getCampaignById.get(id);
+      return { success: true, campaign };
+    } catch (error: any) {
+      request.log.error(error);
+      return reply.status(500).send({ success: false, error: error.message });
+    }
+  }
+);
+
+fastify.put<{ Params: { id: string }; Body: any }>('/api/campaigns/:id', async (request, reply) => {
+  try {
+    const { id } = request.params;
+    const data = request.body;
+    const existing = await queries.getCampaignById.get(id) as any;
+    if (!existing) {
+      return reply.status(404).send({ error: 'Campaign not found' });
+    }
+    await queries.updateCampaign.run({
+      id,
+      name: data.name || existing.name,
+      topic: data.topic || existing.topic,
+      platforms: Array.isArray(data.platforms) ? data.platforms.join(',') : (data.platforms || existing.platforms),
+      startDate: data.startDate || existing.startDate,
+      endDate: data.endDate || existing.endDate,
+      tone: data.tone || existing.tone,
+      status: data.status || existing.status
+    });
+    const updated = await queries.getCampaignById.get(id);
+    return { success: true, campaign: updated };
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({ success: false, error: error.message });
+  }
+});
+
+fastify.delete<{ Params: { id: string } }>('/api/campaigns/:id', async (request, reply) => {
+  try {
+    await queries.deleteCampaign.run(request.params.id);
+    return { success: true };
+  } catch (error: any) {
+    request.log.error(error);
+    return reply.status(500).send({ success: false, error: error.message });
+  }
 });
 
 // ========== ORIGINAL POST ROUTES (V6) ==========
@@ -385,12 +472,11 @@ fastify.put<{ Params: { id: string }, Body: any }>('/api/posts/:id', { preHandle
     if (!existing) {
       return reply.status(404).send({ error: 'Post not found' });
     }
-    // Enforce publish windows if scheduledAt provided
-    const windows = await queries.getAllWindows.all() as Array<{ platformId: string; startHour: number; endHour: number; enabled: number }>;
+    const windows = await queries.getAllWindows.all() as Array<{ platformId: string; startHour: number; endHour: number; enabled: number; minGapMinutes?: number }>;
     const windowsMap = new Map(windows.map(w => [w.platformId, w]));
     const getPlatformList = (): string[] => {
       if (Array.isArray(data.platformIds)) return data.platformIds as string[];
-      const raw = existing.platform_ids || '';
+      const raw = existing.platformIds || existing.platform_ids || '';
       if (!raw) return existing.platformId ? [existing.platformId] : [];
       const s = String(raw).trim();
       if (s.startsWith('[')) {
@@ -427,7 +513,7 @@ fastify.put<{ Params: { id: string }, Body: any }>('/api/posts/:id', { preHandle
       const updatedV6 = {
         id,
         content: data.content || existing.content,
-        scheduledAt: data.scheduledAt || existing.scheduled_at,
+        scheduledAt: data.scheduledAt || existing.scheduledAt || existing.scheduled_at,
         status: data.status || existing.status,
         platformIds: (data.platformIds as string[]).join(',')
       };
@@ -445,7 +531,7 @@ fastify.put<{ Params: { id: string }, Body: any }>('/api/posts/:id', { preHandle
       const updated = {
         id,
         content: data.content || existing.content,
-        scheduledAt: data.scheduledAt || existing.scheduled_at,
+        scheduledAt: data.scheduledAt || existing.scheduledAt || existing.scheduled_at,
         status: data.status || existing.status
       };
       await queries.updatePost.run(updated);
@@ -549,7 +635,7 @@ fastify.patch<{ Body: { ids: string[]; setPlatformIds?: string[]; shiftByMinutes
     try {
       const existing = await queries.getPostById.get(id) as any;
       if (!existing) { results.push({ id, ok: false, error: 'not_found' }); continue; }
-      let scheduledAt = existing.scheduled_at as string | null;
+      let scheduledAt = (existing.scheduledAt || existing.scheduled_at) as string | null;
       if (typeof setScheduledAt === 'string') scheduledAt = setScheduledAt;
       if (typeof shiftByMinutes === 'number' && scheduledAt) {
         const d = new Date(scheduledAt); d.setMinutes(d.getMinutes() + shiftByMinutes); scheduledAt = d.toISOString();
@@ -557,10 +643,10 @@ fastify.patch<{ Body: { ids: string[]; setPlatformIds?: string[]; shiftByMinutes
       const platformIds = Array.isArray(setPlatformIds)
         ? setPlatformIds
         : (() => {
-            const raw = existing.platform_ids || '';
+            const raw = existing.platformIds || existing.platform_ids || '';
             const s = String(raw).trim();
             if (s.startsWith('[')) { try { return JSON.parse(s.replace(/'/g,'"')); } catch { return []; } }
-            return s ? s.split(',').filter(Boolean) : (existing.platform_id ? [existing.platform_id] : []);
+            return s ? s.split(',').filter(Boolean) : (existing.platformId ? [existing.platformId] : []);
           })();
       if (scheduledAt) {
         const dt = new Date(scheduledAt);
@@ -577,7 +663,7 @@ fastify.patch<{ Body: { ids: string[]; setPlatformIds?: string[]; shiftByMinutes
       const payload = {
         id,
         content: existing.content,
-        scheduledAt: scheduledAt || existing.scheduled_at,
+        scheduledAt: scheduledAt || existing.scheduledAt || existing.scheduled_at,
         status: existing.status,
         platformIds: platformIds.join(',')
       };

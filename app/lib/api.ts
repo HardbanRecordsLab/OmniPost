@@ -1,3 +1,5 @@
+import type { GeneratedSocialContent } from "./services/ai-service";
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 async function request(path: string, options?: RequestInit) {
@@ -102,7 +104,7 @@ export const api = {
       body: JSON.stringify(data)
     });
   },
-  async generate(data: { topic: string; clusters: string[]; provider?: 'gemini' | 'grok' }) {
+  async generate(data: { topic: string; clusters: string[]; provider?: 'gemini' | 'grok' }): Promise<{ success: boolean; posts?: GeneratedSocialContent[]; error?: string }> {
     return request('/api/generate', {
       method: 'POST',
       body: JSON.stringify(data)

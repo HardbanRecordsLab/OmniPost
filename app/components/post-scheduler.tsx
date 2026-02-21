@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Upload, X, Calendar, Image as ImageIcon, Sparkles, Wand2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
+import { AICaptionPanel } from '@/components/ai/ai-caption-panel';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -37,6 +39,7 @@ export default function PostScheduler({ className }: PostSchedulerProps) {
   const [uploading, setUploading] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [showAIPanel, setShowAIPanel] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -160,32 +163,30 @@ export default function PostScheduler({ className }: PostSchedulerProps) {
   }
 
   async function generateCaption(prompt: string) {
+    if (!prompt) return;
     setAiLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/ai/generate-caption`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          prompt,
-          platform: selectedPlatforms[0] || 'instagram',
-          tone: 'casual',
-          length: 'medium',
-          includeHashtags: true,
-          includeEmojis: true
-        })
+      const clusters = selectedPlatforms.length > 0 ? selectedPlatforms : ['instagram'];
+      const res = await api.generate({
+        topic: prompt,
+        clusters,
+        provider: 'gemini'
       });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        setCaption(data.caption);
+      const posts = (res as any).posts || [];
+      const target = clusters[0];
+      const match = posts.find((p: any) => p.platformId === target) || posts[0];
+      const content = match?.content || (res as any).content || '';
+      if (content) {
+        setCaption(content);
         toast({
           title: "AI Generated",
           description: "Caption generated successfully!",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: "AI did not return any content.",
+          variant: "destructive",
         });
       }
     } catch (error) {
@@ -366,6 +367,14 @@ export default function PostScheduler({ className }: PostSchedulerProps) {
                {aiLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wand2 className="mr-2 h-4 w-4 text-indigo-500" />}
               AI Improve
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAIPanel(true)}
+            >
+              <Sparkles className="mr-2 h-4 w-4 text-purple-500" />
+              AI Studio
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -491,6 +500,14 @@ export default function PostScheduler({ className }: PostSchedulerProps) {
           Clear Form
         </Button>
       </div>
+      {showAIPanel && (
+        <AICaptionPanel
+          currentContent={caption}
+          selectedPlatforms={selectedPlatforms}
+          onApply={(next) => setCaption(next)}
+          onClose={() => setShowAIPanel(false)}
+        />
+      )}
     </div>
   );
 }
