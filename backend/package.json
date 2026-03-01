@@ -27,6 +27,7 @@
     "omnipost-root": "file:..",
     "openai": "^6.21.0",
     "pg": "^8.11.3",
+    "axios": "^1.6.7",
     "sharp": "^0.34.5",
     "snoowrap": "^1.23.0",
     "tsx": "^4.12.0",
