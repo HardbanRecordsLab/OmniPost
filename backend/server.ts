@@ -57,7 +57,7 @@ const requireLicense = async (_request: any, reply: any) => {
 
 fastify.addHook('onRequest', async (request, reply) => {
   const path = request.url.split('?')[0];
-  if (path === '/api/health') return;
+  if (path === '/api/health' || path === '/') return;
   await requireApiKey(request, reply);
 });
 
@@ -75,6 +75,10 @@ const schedulerService = {
 
 fastify.get('/api/health', async () => {
   return { status: 'ok', timestamp: Date.now() };
+});
+
+fastify.get('/', async () => {
+  return { ok: true, service: 'omnipost-backend', ts: Date.now() };
 });
 
 fastify.get('/api/integrations', async (request, reply) => {
