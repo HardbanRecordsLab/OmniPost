@@ -13,6 +13,7 @@ import path from 'path';
 
 const fastify = Fastify({ logger: { level: 'warn' } });
 const API_KEY = process.env.API_KEY || '';
+const FRONTEND_URL = process.env.FRONTEND_URL || '';
 
 initDb();
 
@@ -20,8 +21,15 @@ startScheduler();
 
 fastify.register(cors, {
   origin: (origin, cb) => {
-    // Allow all origins (reflection) for Vercel compatibility
-    cb(null, true);
+    if (!origin) return cb(null, true);
+    if (!FRONTEND_URL) return cb(null, true);
+    try {
+      const allowed = new URL(FRONTEND_URL).origin;
+      if (origin === allowed) return cb(null, true);
+      return cb(new Error('Not allowed by CORS'), false);
+    } catch {
+      return cb(null, true);
+    }
   },
   credentials: true
 });
@@ -46,6 +54,12 @@ const requireLicense = async (_request: any, reply: any) => {
     return reply.status(402).send({ error: 'payment_required' });
   }
 };
+
+fastify.addHook('onRequest', async (request, reply) => {
+  const path = request.url.split('?')[0];
+  if (path === '/api/health') return;
+  await requireApiKey(request, reply);
+});
 
 const schedulerService = {
   schedulePost: async (postId: string, scheduledAt?: string) => {
