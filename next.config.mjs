@@ -30,7 +30,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://84.247.162.167:3004/api/:path*',
+        destination: 'https://omnipost.hardbanrecordslab.online/api/:path*',
       },
     ];
   },
