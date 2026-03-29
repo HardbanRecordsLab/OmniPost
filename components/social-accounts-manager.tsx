@@ -449,6 +449,15 @@ export function SocialAccountsManager() {
                     <CardContent className="space-y-4">
                       <div className="text-sm">
                         <p><strong>Session ID:</strong> {activeSession.sessionId}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null;
+              })()}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
