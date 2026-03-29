@@ -1,15 +1,71 @@
 import type { GeneratedSocialContent } from "./services/ai-service";
+import { useAuth } from "@/contexts/auth-context";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 async function request(path: string, options?: RequestInit) {
+  // Get tokens from localStorage for server-side requests
+  let authHeaders: Record<string, string> = {};
+  
+  if (typeof window !== 'undefined') {
+    const tokens = localStorage.getItem('auth_tokens');
+    if (tokens) {
+      const { access_token } = JSON.parse(tokens);
+      authHeaders['Authorization'] = `Bearer ${access_token}`;
+    }
+  }
+  
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: { 
       'Content-Type': 'application/json',
-      ...(process.env.NEXT_PUBLIC_API_KEY ? { 'x-api-key': String(process.env.NEXT_PUBLIC_API_KEY) } : {})
+      ...(process.env.NEXT_PUBLIC_API_KEY ? { 'x-api-key': String(process.env.NEXT_PUBLIC_API_KEY) } : {}),
+      ...authHeaders
     },
     ...options
   });
+  
+  // Handle 401 unauthorized - try to refresh token
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const tokens = JSON.parse(localStorage.getItem('auth_tokens') || '{}');
+    if (tokens.refresh_token) {
+      try {
+        const refreshResponse = await fetch(`${BASE_URL}/api/auth/refresh`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${tokens.refresh_token}`,
+            ...(process.env.NEXT_PUBLIC_API_KEY ? { 'x-api-key': String(process.env.NEXT_PUBLIC_API_KEY) } : {})
+          }
+        });
+        
+        if (refreshResponse.ok) {
+          const refreshData = await refreshResponse.json();
+          const newTokens = { ...tokens, ...refreshData };
+          localStorage.setItem('auth_tokens', JSON.stringify(newTokens));
+          
+          // Retry original request with new token
+          return request(path, {
+            ...options,
+            headers: {
+              ...(options?.headers || {}),
+              'Authorization': `Bearer ${newTokens.access_token}`
+            }
+          });
+        } else {
+          // Refresh failed, clear tokens and reload
+          localStorage.removeItem('auth_tokens');
+          localStorage.removeItem('auth_user');
+          window.location.reload();
+        }
+      } catch (error) {
+        console.error('Token refresh failed:', error);
+        localStorage.removeItem('auth_tokens');
+        localStorage.removeItem('auth_user');
+        window.location.reload();
+      }
+    }
+  }
+  
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`API error ${res.status}: ${text}`);
@@ -189,10 +245,22 @@ export const api = {
     return request(`/api/links/${id}/stats`);
   },
   async uploadMedia(formData: FormData) {
-    const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+    let authHeaders: Record<string, string> = {};
+    
+    if (typeof window !== 'undefined') {
+      const tokens = localStorage.getItem('auth_tokens');
+      if (tokens) {
+        const { access_token } = JSON.parse(tokens);
+        authHeaders['Authorization'] = `Bearer ${access_token}`;
+      }
+    }
+    
     const res = await fetch(`${BASE_URL}/api/media/upload`, {
       method: 'POST',
-      headers: process.env.NEXT_PUBLIC_API_KEY ? { 'x-api-key': String(process.env.NEXT_PUBLIC_API_KEY) } : {},
+      headers: {
+        ...(process.env.NEXT_PUBLIC_API_KEY ? { 'x-api-key': String(process.env.NEXT_PUBLIC_API_KEY) } : {}),
+        ...authHeaders
+      },
       body: formData,
     });
     if (!res.ok) {
@@ -200,5 +268,73 @@ export const api = {
       throw new Error(`API error ${res.status}: ${text}`);
     }
     return res.json();
+  },
+  // Auth endpoints
+  async login(email: string, password: string) {
+    return request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password })
+    });
+  },
+  async register(email: string, username: string, password: string, confirmPassword: string) {
+    return request('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, username, password, confirmPassword })
+    });
+  },
+  async logout() {
+    return request('/api/auth/logout', {
+      method: 'POST'
+    });
+  },
+  async refreshToken() {
+    const tokens = JSON.parse(localStorage.getItem('auth_tokens') || '{}');
+    const response = await fetch(`${BASE_URL}/api/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${tokens.refresh_token}`,
+        ...(process.env.NEXT_PUBLIC_API_KEY ? { 'x-api-key': String(process.env.NEXT_PUBLIC_API_KEY) } : {})
+      }
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`API error ${response.status}: ${text}`);
+    }
+    return response.json();
+  },
+  // Integration endpoints
+  async getIntegrations() {
+    return request('/api/integrations');
+  },
+  async connectPlatform(platform: string) {
+    return request(`/api/integrations/${platform}/connect`, {
+      method: 'POST'
+    });
+  },
+  async disconnectPlatform(platform: string, accountId: string) {
+    return request(`/api/integrations/${platform}/${accountId}/disconnect`, {
+      method: 'POST'
+    });
+  },
+  // Vault endpoints
+  async getVaultEntries(platform?: string) {
+    const query = platform ? `?platform=${platform}` : '';
+    return request(`/api/vault${query}`);
+  },
+  async startCaptureSession(platform: string, loginUrl: string) {
+    return request('/api/vault/capture', {
+      method: 'POST',
+      body: JSON.stringify({ platform, loginUrl })
+    });
+  },
+  async getCaptureSession(sessionId: string) {
+    return request(`/api/vault/capture/${sessionId}`);
+  },
+  async deleteVaultEntry(entryId: string) {
+    return request(`/api/vault/${entryId}`, {
+      method: 'DELETE'
+    });
   },
 };

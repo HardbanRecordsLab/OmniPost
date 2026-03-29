@@ -1,25 +1,28 @@
  "use client"
- 
- import { useState, useEffect } from "react"
- import { motion, AnimatePresence } from "framer-motion"
+
+import { useState, useEffect } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import { Sidebar } from "@/components/sidebar"
- import { Header } from "@/components/header"
- import { DashboardOverview } from "@/components/dashboard-overview"
- import { CalendarView } from "@/components/calendar-view"
- import { QueueView } from "@/components/queue-view"
- import { CampaignWizard } from "@/components/campaign-wizard"
- import { AnalyticsView } from "@/components/analytics-view"
+import { Header } from "@/components/header"
+import { DashboardOverview } from "@/components/dashboard-overview"
+import { CalendarView } from "@/components/calendar-view"
+import { QueueView } from "@/components/queue-view"
+import { CampaignWizard } from "@/components/campaign-wizard"
+import { AnalyticsView } from "@/components/analytics-view"
 import { SettingsView } from "@/components/settings-view"
 import { PostEditorModal } from "@/components/post-editor-modal"
-import { SocialAccountsManager } from "@/components/social-accounts-manager"
+import SocialAccountsManager from "@/components/social-accounts-manager"
 import PostScheduler from "@/components/post-scheduler"
 import { MediaLibraryView } from "@/components/media-library-view"
 import { LinkManagerView } from "@/components/link-manager-view"
+import { AuthProvider, useAuth } from "@/contexts/auth-context"
+import { LoginView } from "@/components/login-view"
 
-export default function OmniPostDashboard() {
+function OmniPostDashboard() {
   const [activeView, setActiveView] = useState("dashboard")
   const [isDark, setIsDark] = useState(false)
   const [isPostEditorOpen, setIsPostEditorOpen] = useState(false)
+  const { user, isLoading } = useAuth()
 
   useEffect(() => {
     if (isDark) {
@@ -30,6 +33,18 @@ export default function OmniPostDashboard() {
   }, [isDark])
 
   const toggleTheme = () => setIsDark(!isDark)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <LoginView />
+  }
 
   const renderContent = () => {
     switch (activeView) {
@@ -88,3 +103,11 @@ export default function OmniPostDashboard() {
      </div>
    )
  }
+
+export default function OmniPostDashboardWrapper() {
+  return (
+    <AuthProvider>
+      <OmniPostDashboard />
+    </AuthProvider>
+  )
+}

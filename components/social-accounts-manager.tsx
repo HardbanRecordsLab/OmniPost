@@ -23,8 +23,6 @@ const PLATFORMS = [
   { id: 'bluesky', name: 'Bluesky', icon: '🦋', color: 'from-blue-400 to-blue-600' }
 ];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-
 interface Account {
   id: string;
   platform: string;
@@ -52,343 +50,314 @@ interface CaptureSession {
   loginUrl?: string;
 }
 
-export function SocialAccountsManager() {
-  const [connectedAccounts, setConnectedAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [connecting, setConnecting] = useState<string | null>(null);
-  
-  // Session Vault state
+export default function SocialAccountsManager() {
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [vaultEntries, setVaultEntries] = useState<VaultEntry[]>([]);
-  const [captureSessions, setCaptureSessions] = useState<Record<string, CaptureSession>>({});
+  const [captureSessions, setCaptureSessions] = useState<CaptureSession[]>([]);
   const [showVaultDialog, setShowVaultDialog] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
-  const [loadingVault, setLoadingVault] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadConnectedAccounts();
-    loadVaultEntries();
-
-    // Check for OAuth callback
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('success') === 'true') {
-      const platform = urlParams.get('platform');
-      // Show success message
-      alert(`Successfully connected ${platform}!`);
-      // Clean URL
-      window.history.replaceState({}, '', '/integrations');
-      // Reload accounts
-      loadConnectedAccounts();
-    } else if (urlParams.get('error')) {
-      alert(`Connection failed: ${urlParams.get('error')}`);
-      window.history.replaceState({}, '', '/integrations');
-    }
+    loadAccounts();
   }, []);
 
-  // Session Vault functions
-  async function loadVaultEntries() {
+  useEffect(() => {
+    if (selectedPlatform) {
+      loadVaultEntries(selectedPlatform);
+    }
+  }, [selectedPlatform]);
+
+  const loadAccounts = async () => {
     try {
-      setLoadingVault(true);
-      const response = await api.get('/api/vault');
-      setVaultEntries(response.data.entries || []);
-    } catch (error) {
-      console.error('Error loading vault entries:', error);
+      setIsLoading(true);
+      setError(null);
+      const response = await api.getIntegrations();
+      if (response.success) {
+        setAccounts(response.accounts || []);
+      } else {
+        setError(response.error || 'Failed to load accounts');
+      }
+    } catch (err) {
+      console.error('Failed to load accounts:', err);
+      setError('Network error');
     } finally {
-      setLoadingVault(false);
+      setIsLoading(false);
     }
-  }
+  };
 
-  async function startSessionCapture(platform: string) {
+  const loadVaultEntries = async (platform?: string) => {
     try {
-      const response = await api.post('/api/vault/capture', { platform });
-      const session = response.data;
-      
-      setCaptureSessions(prev => ({
-        ...prev,
-        [session.sessionId]: session
-      }));
-      
-      setSelectedPlatform(platform);
-      setShowVaultDialog(true);
-      
-      // Start polling for results
-      pollCaptureResult(session.sessionId);
-      
-      // Open login URL if provided
-      if (session.loginUrl) {
-        window.open(session.loginUrl, '_blank');
+      const response = await api.getVaultEntries(platform);
+      if (response.entries) {
+        setVaultEntries(response.entries);
       }
-    } catch (error) {
-      console.error('Error starting session capture:', error);
-      alert('Failed to start session capture. Please try again.');
+    } catch (err) {
+      console.error('Failed to load vault entries:', err);
     }
-  }
+  };
 
-  async function pollCaptureResult(sessionId: string) {
-    const maxAttempts = 150; // 5 minutes with 2-second intervals
-    let attempts = 0;
-    
-    const poll = async () => {
-      if (attempts >= maxAttempts) {
-        setCaptureSessions(prev => ({
-          ...prev,
-          [sessionId]: { ...prev[sessionId], status: 'timeout', message: 'Capture timeout' }
-        }));
-        return;
+  const connectAccount = async (platform: string) => {
+    try {
+      const response = await api.connectPlatform(platform);
+      if (response.authUrl) {
+        window.open(response.authUrl, '_blank', 'width=800,height=600');
+        // Poll for connection status
+        const checkConnection = setInterval(async () => {
+          await loadAccounts();
+        }, 2000);
+        setTimeout(() => clearInterval(checkConnection), 30000);
       }
+    } catch (err) {
+      console.error('Failed to connect account:', err);
+      setError('Failed to connect account');
+    }
+  };
+
+  const disconnectAccount = async (platform: string, accountId: string) => {
+    try {
+      await api.disconnectPlatform(platform, accountId);
+      await loadAccounts();
+    } catch (err) {
+      console.error('Failed to disconnect account:', err);
+      setError('Failed to disconnect account');
+    }
+  };
+
+  const startSessionCapture = async (platform: string) => {
+    try {
+      const loginUrl = getLoginUrl(platform);
+      const response = await api.startCaptureSession(platform, loginUrl);
+      if (response.sessionId) {
+        const newSession: CaptureSession = {
+          sessionId: response.sessionId,
+          platform,
+          status: 'pending',
+          progress: 0
+        };
+        setCaptureSessions(prev => [...prev, newSession]);
+        pollCaptureStatus(response.sessionId);
+      }
+    } catch (err) {
+      console.error('Failed to start capture session:', err);
+      setError('Failed to start capture session');
+    }
+  };
+
+  const pollCaptureStatus = async (sessionId: string) => {
+    try {
+      const response = await api.getCaptureSession(sessionId);
+      setCaptureSessions(prev => 
+        prev.map(session => 
+          session.sessionId === sessionId 
+            ? { ...session, ...response }
+            : session
+        )
+      );
       
-      try {
-        const response = await api.get(`/api/vault/capture/${sessionId}`);
-        const session = response.data;
-        
-        setCaptureSessions(prev => ({
-          ...prev,
-          [sessionId]: session
-        }));
-        
-        if (session.status === 'completed') {
-          loadVaultEntries(); // Refresh vault entries
-        } else if (session.status === 'pending' || session.status === 'capturing') {
-          attempts++;
-          setTimeout(poll, 2000);
+      if (response.status === 'completed' || response.status === 'failed') {
+        // Reload vault entries if completed
+        if (response.status === 'completed' && selectedPlatform) {
+          await loadVaultEntries(selectedPlatform);
         }
-      } catch (error) {
-        console.error('Error polling capture result:', error);
-        attempts++;
-        setTimeout(poll, 2000);
+      } else {
+        // Continue polling
+        setTimeout(() => pollCaptureStatus(sessionId), 2000);
       }
-    };
-    
-    poll();
-  }
+    } catch (err) {
+      console.error('Failed to poll capture status:', err);
+    }
+  };
 
-  async function deleteVaultEntry(entryId: string) {
-    if (!confirm('Are you sure you want to delete this session? This will remove all stored cookies.')) {
-      return;
-    }
-    
+  const deleteVaultEntry = async (entryId: string) => {
     try {
-      await api.delete(`/api/vault/${entryId}`);
-      loadVaultEntries();
-    } catch (error) {
-      console.error('Error deleting vault entry:', error);
-      alert('Failed to delete vault entry');
+      await api.deleteVaultEntry(entryId);
+      if (selectedPlatform) {
+        await loadVaultEntries(selectedPlatform);
+      }
+    } catch (err) {
+      console.error('Failed to delete vault entry:', err);
+      setError('Failed to delete vault entry');
     }
-  }
+  };
+
+  const getLoginUrl = (platform: string): string => {
+    const urls: Record<string, string> = {
+      instagram: 'https://www.instagram.com/accounts/login/',
+      facebook: 'https://www.facebook.com/login',
+      twitter: 'https://twitter.com/login',
+      linkedin: 'https://www.linkedin.com/login',
+      tiktok: 'https://www.tiktok.com/login',
+      youtube: 'https://accounts.google.com/signin',
+      telegram: 'https://web.telegram.org',
+      discord: 'https://discord.com/login',
+      reddit: 'https://www.reddit.com/login',
+      pinterest: 'https://www.pinterest.com/login',
+      bluesky: 'https://bsky.app/login'
+    };
+    return urls[platform] || '#';
+  };
 
   const getVaultEntriesForPlatform = (platform: string) => {
     return vaultEntries.filter(entry => entry.platform === platform);
   };
 
   const getActiveCaptureSession = (platform: string) => {
-    return Object.values(captureSessions).find(
+    return captureSessions.find(
       session => session.platform === platform && (session.status === 'pending' || session.status === 'capturing')
     );
   };
 
-  async function loadConnectedAccounts() {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/integrations`, {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
+  const connectedAccounts = accounts;
 
-      const data = await response.json();
-      if (data.success) {
-        setConnectedAccounts(data.accounts);
-      }
-    } catch (error) {
-      console.error('Error loading accounts:', error);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function connectAccount(platform: string) {
-    setConnecting(platform);
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/integrations/${platform}/connect`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await response.json();
-      
-      if (data.success && data.authUrl) {
-        // Redirect to OAuth
-        window.location.href = data.authUrl;
-      } else {
-        throw new Error('Failed to get auth URL');
-      }
-    } catch (error) {
-      console.error('Connection error:', error);
-      alert('Failed to connect account. Please try again.');
-      setConnecting(null);
-    }
-  }
-
-  async function disconnectAccount(accountId: string) {
-    if (!confirm('Are you sure you want to disconnect this account?')) {
-      return;
-    }
-
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/integrations/${accountId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      const data = await response.json();
-      
-      if (data.success) {
-        // Reload accounts
-        loadConnectedAccounts();
-      }
-    } catch (error) {
-      console.error('Disconnect error:', error);
-      alert('Failed to disconnect account');
-    }
-  }
-
-  const isConnected = (platformId: string) => {
-    return connectedAccounts.some(acc => acc.platform === platformId);
-  };
-
-  const getAccountInfo = (platformId: string) => {
-    return connectedAccounts.find(acc => acc.platform === platformId);
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center p-12">
-        <Loader2 className="h-12 w-12 animate-spin text-blue-600" />
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 animate-spin" />
       </div>
     );
   }
 
+  if (error) {
+    return (
+      <Card className="border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-2 text-red-800 dark:text-red-300">
+            <AlertCircle className="w-5 h-5" />
+            <span>{error}</span>
+            <Button variant="outline" size="sm" onClick={loadAccounts}>
+              <RefreshCw className="w-4 h-4 mr-1" />
+              Retry
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <div className="max-w-6xl mx-auto p-6 space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">Connected Accounts</h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Connect your social media accounts to start scheduling posts
-        </p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Social Media Integrations</h2>
+          <p className="text-muted-foreground">Connect your social media accounts for automated posting</p>
+        </div>
+        <Badge variant="outline" className="text-sm">
+          {connectedAccounts.length} / {PLATFORMS.length} connected
+        </Badge>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Platform Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {PLATFORMS.map(platform => {
-          const connected = isConnected(platform.id);
-          const accountInfo = getAccountInfo(platform.id);
+          const isConnected = connectedAccounts.some(acc => acc.platform === platform.id);
+          const vaultEntriesCount = getVaultEntriesForPlatform(platform.id).length;
+          const activeSession = getActiveCaptureSession(platform.id);
 
           return (
-            <Card
-              key={platform.id}
-              className={`relative overflow-hidden transition-all hover:shadow-lg ${
-                connected ? 'border-green-500 bg-green-50/50 dark:bg-green-950/10' : ''
-              }`}
-            >
-              <CardContent className="p-6">
-                {/* Platform Icon & Name */}
-                <div className="flex items-center gap-4 mb-6">
-                  <div className={`text-3xl bg-gradient-to-br ${platform.color} w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg text-white`}>
-                    <span className="filter brightness-110">{platform.icon}</span>
+            <Card key={platform.id} className={`relative overflow-hidden transition-all duration-200 hover:shadow-lg ${
+              isConnected ? 'border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20' : ''
+            }`}>
+              <div className={`absolute inset-0 bg-gradient-to-br ${platform.color} opacity-5`} />
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{platform.icon}</span>
+                    <span className="font-semibold">{platform.name}</span>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-xl">{platform.name}</h3>
-                    {connected && accountInfo && (
-                      <p className="text-sm text-gray-600 dark:text-gray-400 font-medium">
-                        @{accountInfo.username}
-                      </p>
+                  <div className="flex items-center gap-2">
+                    {isConnected && <CheckCircle2 className="w-5 h-5 text-green-600" />}
+                    {vaultEntriesCount > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        <Shield className="w-3 h-3 mr-1" />
+                        {vaultEntriesCount}
+                      </Badge>
                     )}
                   </div>
-                </div>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isConnected ? (
+                  <div className="space-y-3">
+                    <div className="text-sm text-green-800 dark:text-green-300 font-medium">
+                      ✓ Connected
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedPlatform(platform.id);
+                          setShowVaultDialog(true);
+                        }}
+                        className="flex-1"
+                      >
+                        <Shield className="w-4 h-4 mr-1" />
+                        Session Vault
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const account = connectedAccounts.find(acc => acc.platform === platform.id);
+                          if (account) disconnectAccount(platform.id, account.id);
+                        }}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="text-sm text-muted-foreground">
+                      Not connected
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedPlatform(platform.id);
+                          setShowVaultDialog(true);
+                        }}
+                        className="flex-1"
+                      >
+                        <Shield className="w-4 h-4 mr-1" />
+                        Session Vault
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => startSessionCapture(platform.id)}
+                        disabled={!!activeSession}
+                        className="flex-1 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700 dark:border-blue-900 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                      >
+                        <Key className="w-4 h-4 mr-1" />
+                        {activeSession ? 'Capturing...' : 'Capture Session'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
-                {/* Status & Action */}
-                <div className="space-y-4">
-                  {connected ? (
-                    <>
-                      <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium bg-green-100 dark:bg-green-900/30 px-3 py-1.5 rounded-full w-fit">
-                        <CheckCircle2 className="w-4 h-4" />
-                        Connected
-                      </div>
-                      {accountInfo && (
-                        <p className="text-xs text-gray-500 dark:text-gray-500">
-                          Connected {new Date(accountInfo.connectedAt).toLocaleDateString()}
-                        </p>
-                      )}
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() => startSessionCapture(platform.id)}
-                          disabled={!!getActiveCaptureSession(platform.id)}
-                          className="flex-1 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700 dark:border-blue-900 dark:text-blue-400 dark:hover:bg-blue-950/30"
-                        >
-                          <Key className="w-4 h-4 mr-1" />
-                          {getActiveCaptureSession(platform.id) ? 'Capturing...' : 'Capture Session'}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setSelectedPlatform(platform.id);
-                            setShowVaultDialog(true);
-                          }}
-                          className="flex-1 border-purple-200 text-purple-600 hover:bg-purple-50 hover:text-purple-700 dark:border-purple-900 dark:text-purple-400 dark:hover:bg-purple-950/30"
-                        >
-                          <Shield className="w-4 h-4 mr-1" />
-                          Manage Sessions
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => disconnectAccount(accountInfo!.id)}
-                          className="w-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/30"
-                        >
-                          Disconnect
-                        </Button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2 text-gray-400 text-sm px-1">
-                        <div className="w-2 h-2 bg-gray-300 rounded-full" />
-                        Not Connected
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => connectAccount(platform.id)}
-                          disabled={connecting === platform.id}
-                          className={`flex-1 bg-gradient-to-r ${platform.color} text-white border-0 hover:opacity-90 transition-opacity`}
-                        >
-                          {connecting === platform.id ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Connecting...
-                            </>
-                          ) : (
-                            'Connect'
-                          )}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => startSessionCapture(platform.id)}
-                          disabled={!!getActiveCaptureSession(platform.id)}
-                          className="flex-1 border-blue-200 text-blue-600 hover:bg-blue-50 hover:text-blue-700 dark:border-blue-900 dark:text-blue-400 dark:hover:bg-blue-950/30"
-                        >
-                          <Key className="w-4 h-4 mr-1" />
-                          {getActiveCaptureSession(platform.id) ? 'Capturing...' : 'Capture Session'}
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </div>
+                {activeSession && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Session Capture in Progress</span>
+                    </div>
+                    <div className="w-full bg-blue-100 dark:bg-blue-900 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${activeSession.progress || 0}%` }}
+                      />
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Session ID: {activeSession.sessionId}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -461,5 +430,3 @@ export function SocialAccountsManager() {
     </div>
   );
 }
-
-export default SocialAccountsManager;
