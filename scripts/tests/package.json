@@ -1,0 +1,17 @@
+{
+  "name": "omnipost-property-tests",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest --run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "fast-check": "^3.22.0",
+    "vitest": "^2.0.0",
+    "typescript": "^5.8.2",
+    "@types/node": "^20.11.30",
+    "tsx": "^4.12.0"
+  }
+}

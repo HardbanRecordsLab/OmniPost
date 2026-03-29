@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - name: "HardbanRecordsLab"
+title: "OmniPost"
+version: 6.0.0
+date-released: 2026-02-13
+url: "https://github.com/HardbanRecordsLab/OmniPost"
+repository-code: "https://github.com/HardbanRecordsLab/OmniPost"
+license: "MIT"
