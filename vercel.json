@@ -1,11 +1,4 @@
 {
-    "buildCommand": "npm run build",
-    "installCommand": "npm install",
-    "framework": "nextjs",
-    "rootDirectory": "app",
-    "outputDirectory": ".next",
-    "devCommand": "npm run dev",
-    "functions": {},
     "regions": ["iad1"],
     "rewrites": [
         {
