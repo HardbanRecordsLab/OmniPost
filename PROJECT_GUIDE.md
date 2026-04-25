@@ -34,3 +34,27 @@ Self-hosted social media scheduler (Buffer-like).
 **AI:**
 - content generation only
 - JSON output only
+
+---
+
+## TODO — Platform Adapters
+
+Currently 12/62 platforms implemented. Missing 50 platforms.
+See full list: `Social_Media_Platforms_62_Networks.md`
+
+**Priority for HRL (music-related):**
+- [ ] Spotify
+- [ ] SoundCloud
+- [ ] Mixcloud
+- [ ] Bandcamp
+- [ ] Threads
+- [ ] Snapchat
+- [ ] WhatsApp
+- [ ] Tumblr
+- [ ] Mastodon
+- [ ] Medium
+- [ ] VKontakte
+- [ ] Weibo
+- [ ] Telegram (bot posting)
+- [ ] Slack
+- [ ] Microsoft Teams
