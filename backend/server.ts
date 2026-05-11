@@ -24,8 +24,15 @@ fastify.register(cors, {
     if (!origin) return cb(null, true);
     if (!FRONTEND_URL) return cb(null, true);
     try {
-      const allowed = new URL(FRONTEND_URL).origin;
-      if (origin === allowed) return cb(null, true);
+      // Support comma-separated list of allowed origins
+      const allowedOrigins = FRONTEND_URL.split(',').map(u => {
+        try { return new URL(u.trim()).origin; } catch { return u.trim(); }
+      });
+      // Always allow hardbanrecordslab.online subdomains
+      if (origin.endsWith('.hardbanrecordslab.online') || origin === 'https://hardbanrecordslab.online') {
+        return cb(null, true);
+      }
+      if (allowedOrigins.includes(origin)) return cb(null, true);
       return cb(new Error('Not allowed by CORS'), false);
     } catch {
       return cb(null, true);
