@@ -1,108 +1,87 @@
 "use client"
 
+// Local app auth context - WordPress/Access Manager login bridge removed.
+
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 
 interface User {
   id: string
+  userId: string
   email: string
   username: string
-  role?: string
+  name: string
+  role: string
+  plan: 'free' | 'starter' | 'pro' | 'label'
+  tier: string
+  credits: number
+}
+
+interface Session {
+  user: User
+  token: string
 }
 
 interface AuthContextType {
   user: User | null
+  session: Session | null
+  token: string | null
   isAuthenticated: boolean
   isLoading: boolean
+  loading: boolean
   logout: () => Promise<void>
+  login: () => void
 }
 
-const ACCESS_MANAGER_URL = process.env.NEXT_PUBLIC_ACCESS_MANAGER_URL as string
-const WP_LOGIN_URL = process.env.NEXT_PUBLIC_WP_LOGIN_URL as string
+const LOCAL_TOKEN = 'hrl-local-app-token'
+const LOCAL_USER: User = {
+  id: 'local-admin',
+  userId: 'local-admin',
+  email: 'local@hardbanrecordslab.online',
+  username: 'local-admin',
+  name: 'Local Admin',
+  role: 'admin',
+  plan: 'label',
+  tier: 'label',
+  credits: 999999,
+}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+function clearLegacySsoState() {
+  localStorage.removeItem('hrl_jwt_token')
+  document.cookie = 'jwt_token=; Max-Age=0; path=/;'
+  document.cookie = 'jwt_token=; Max-Age=0; path=/; domain=.hardbanrecordslab.online;'
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<User | null>(LOCAL_USER)
+  const [token, setToken] = useState<string | null>(LOCAL_TOKEN)
   const [isLoading, setIsLoading] = useState(true)
 
-  const verifyToken = async (): Promise<void> => {
-    try {
-      const res = await fetch(`${ACCESS_MANAGER_URL}/api/auth/verify`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-
-      if (res.status === 401) {
-        const returnUrl = encodeURIComponent(window.location.href)
-        window.location.href = `${WP_LOGIN_URL}?redirect_to=${returnUrl}`
-        return
-      }
-
-      if (res.ok) {
-        setUser(await res.json())
-        return
-      }
-    } catch (error) {
-      console.error('Auth verification failed:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const refreshSession = async (): Promise<void> => {
-    try {
-      const res = await fetch(`${ACCESS_MANAGER_URL}/api/auth/refresh`, {
-        credentials: 'include',
-      })
-
-      if (res.status === 401) {
-        setUser(null)
-        const returnUrl = encodeURIComponent(window.location.href)
-        window.location.href = `${WP_LOGIN_URL}?redirect_to=${returnUrl}`
-        return
-      }
-
-      if (res.ok) {
-        setUser(await res.json())
-      }
-    } catch (error) {
-      console.error('Session refresh failed:', error)
-    }
-  }
-
-  const logout = async (): Promise<void> => {
-    try {
-      await fetch(`${ACCESS_MANAGER_URL}/api/auth/logout`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-    } catch (error) {
-      console.error('Logout failed:', error)
-    } finally {
-      setUser(null)
-      window.location.href = WP_LOGIN_URL
-    }
+  const login = () => {
+    clearLegacySsoState()
+    localStorage.setItem('hrl_local_app_auth', LOCAL_TOKEN)
+    setUser(LOCAL_USER)
+    setToken(LOCAL_TOKEN)
   }
 
   useEffect(() => {
-    verifyToken()
-    const interval = setInterval(refreshSession, 60_000)
-    return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    login()
+    setIsLoading(false)
   }, [])
 
-  const isAuthenticated = Boolean(user)
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-950 text-white">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white" />
-      </div>
-    )
+  const logout = async (): Promise<void> => {
+    clearLegacySsoState()
+    localStorage.removeItem('hrl_local_app_auth')
+    setUser(LOCAL_USER)
+    setToken(LOCAL_TOKEN)
   }
 
+  const session = user && token ? { user, token } : null
+  const isAuthenticated = Boolean(session)
+
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, logout }}>
+    <AuthContext.Provider value={{ user, session, token, isAuthenticated, isLoading, loading: isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )
